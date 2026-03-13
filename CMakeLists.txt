@@ -10,7 +10,7 @@ if(NOT DEFINED BOARD_ROOT)
     message(STATUS "BOARD_ROOT not defined externally, using default: ${BOARD_ROOT}")
 endif()
 
-file(GLOB_RECURSE MYFILE LIST_DIRECTORIES true CONFIGURE_DEPENDS ${CMAKE_BINARY_DIR}/bin/*)
+#file(GLOB_RECURSE MYFILE LIST_DIRECTORIES true CONFIGURE_DEPENDS ${CMAKE_BINARY_DIR}/bin/*)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(app LANGUAGES C)
@@ -19,9 +19,7 @@ target_sources(app PRIVATE
         src/lighting_control_unit.c
         peripherals/can.c
         peripherals/gpio.c
-       # peripherals/adc.c
         peripherals/pwm.c
-       # peripherals/counter.c
         peripherals/led_strip_ctrl.c
 )
 

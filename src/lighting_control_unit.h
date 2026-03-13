@@ -24,9 +24,9 @@
 // #endif
 
 typedef struct lcu_can_t{
-    const struct device *can_device;
-    struct gpio_dt_spec can_tx_led;
-    struct gpio_dt_spec can_rx_led;
+    const struct device *device;
+    struct gpio_dt_spec tx_led;
+    struct gpio_dt_spec rx_led;
 }lcu_can_t;
 
 typedef struct lcu_lights_t{
@@ -37,9 +37,7 @@ typedef struct lcu_lights_t{
 }lcu_lights_t;
 
 void lcu_init();
-
-
-
+void lcu_on_tick() ;
 
 
 #endif //LIGHTING_CONTROL_UNIT_H
