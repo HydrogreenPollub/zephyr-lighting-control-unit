@@ -1,0 +1,106 @@
+name: Build firmware
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout manifest
+        uses: actions/checkout@v6
+        with:
+          repository: HydrogreenPollub/zephyr-manifest
+          path: zephyr-manifest
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends ccache ninja-build device-tree-compiler
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install west
+        run: |
+          pip3 install west
+
+      - name: Cache Zephyr workspace
+        uses: actions/cache@v5
+        with:
+          path: |
+            zephyr
+            modules
+            tools
+            bootloader
+            zephyr-can-converter-unit
+            zephyr-lighting-control-unit
+            zephyr-steering-wheel-unit
+            zephyr-fuel-cell-control-unit
+          key: zephyr-workspace-${{ runner.os }}-${{ hashFiles('zephyr-manifest/west.yml') }}
+          restore-keys: |
+            zephyr-workspace-${{ runner.os }}-
+
+      - name: Initialize and update workspace
+        run: |
+          west init -l zephyr-manifest
+          west update --narrow -o=--depth=1
+
+      - name: Install Python dependencies
+        run: |
+          pip3 install -r zephyr/scripts/requirements.txt
+
+      - name: Cache Zephyr SDK
+        id: cache-sdk
+        uses: actions/cache@v5
+        with:
+          path: ~/zephyr-sdk-1.0.0
+          key: zephyr-sdk-1.0.0-${{ runner.os }}
+
+      - name: Install Zephyr SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v1.0.0/zephyr-sdk-1.0.0_linux-x86_64_minimal.tar.xz
+          tar xf zephyr-sdk-1.0.0_linux-x86_64_minimal.tar.xz -C ~/
+          ~/zephyr-sdk-1.0.0/setup.sh -c -t arm-zephyr-eabi
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Build MCUboot
+        run: |
+          ccache -z
+          west build -p always -b lighting_control_unit -d build-mcuboot \
+            bootloader/mcuboot/boot/zephyr \
+            -- -DBOARD_ROOT=$(pwd)/zephyr-lighting-control-unit/ \
+            -DEXTRA_CONF_FILE=$(pwd)/zephyr-lighting-control-unit/mcuboot.conf
+          ccache -sv
+
+      - name: Build app
+        run: |
+          ccache -z
+          west build -p always -b lighting_control_unit zephyr-lighting-control-unit
+          ccache -sv
+
+      - name: Upload MCUboot
+        uses: actions/upload-artifact@v6
+        with:
+          name: mcuboot-lighting-control-unit
+          path: |
+            build-mcuboot/zephyr/zephyr.bin
+            build-mcuboot/zephyr/zephyr.hex
+
+      - name: Upload app
+        uses: actions/upload-artifact@v6
+        with:
+          name: firmware-lighting-control-unit
+          path: |
+            build/zephyr/zephyr.signed.bin
+            build/zephyr/zephyr.signed.hex
+            build/zephyr/zephyr.elf
