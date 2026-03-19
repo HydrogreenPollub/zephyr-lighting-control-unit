@@ -11,9 +11,10 @@
 	aliases {
 		can-rx-led = &can_rx_led;
 		can-tx-led = &can_tx_led;
+		status-led = &status_led;
+		button-test = &button_test;
 		led-strip = &led_strip;
 		can = &fdcan2;
-		//button = &user_button;
 		watchdog0 = &iwdg;
 		die-temp0 = &die_temp;
 		volt-sensor0 = &vref;
@@ -39,17 +40,19 @@
 			gpios = <&gpioa 12 GPIO_ACTIVE_HIGH>;
 			label = "CAN Tx LED";
 		};
+		status_led: led_pb14 {
+			gpios = <&gpiob 14 GPIO_ACTIVE_HIGH>;
+			label = "Status LED";
+		};
 	};
 
-
-//	gpio_keys {
-//		compatible = "gpio-keys";
-//		user_button: button {
-//			label = "User";
-//			gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
-////			zephyr,code = <INPUT_KEY_0>;
-//		};
-//	};
+	gpio_keys {
+		compatible = "gpio-keys";
+		button_test: button_pc13 {
+			gpios = <&gpioc 13 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "Test button";
+		};
+	};
 
 
 };
