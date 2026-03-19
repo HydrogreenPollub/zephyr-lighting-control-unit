@@ -1,6 +1,6 @@
-[submodule "lib-can-definitions"]
-	path = lib-can-definitions
+[submodule "can-definitions"]
+	path = can-definitions
 	url = https://github.com/HydrogreenPollub/lib-can-definitions.git
-[submodule "app/lib-can-definitions"]
-	path = app/lib-can-definitions
-	url = https://github.com/HydrogreenPollub/lib-can-definitions.git
+[submodule "peripherals"]
+	path = peripherals
+	url = https://github.com/HydrogreenPollub/lib-peripherals.git

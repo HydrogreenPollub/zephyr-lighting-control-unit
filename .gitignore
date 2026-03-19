@@ -3,7 +3,6 @@
 zephyr/
 modules/
 bootloader/
-tools/
 
 # Build artifacts
 build/
