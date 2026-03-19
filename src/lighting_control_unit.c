@@ -30,7 +30,6 @@ static volatile int can_tx_result;
 static struct k_work_delayable tx_led_off_work;
 static struct k_work_delayable rx_led_off_work;
 static struct k_work_delayable bus_off_recovery_work;
-static struct k_work_delayable can_test_leds_off_work;
 
 static const struct can_filter lcu_can_filters[] = {
     CAN_FILTER(CAN_ID_BRAKE_PEDAL_VOLTAGE),
@@ -57,12 +56,10 @@ lcu_lights_t lights = {
     .lights_mask = 0,
 };
 
-static void tx_led_off_handler(struct k_work *work) { gpio_reset(&can.tx_led); }
-static void rx_led_off_handler(struct k_work *work) { gpio_reset(&can.rx_led); }
-static void can_test_leds_off_handler(struct k_work *work) {
-    gpio_reset(&can.rx_led);
-    gpio_reset(&can.tx_led);
-}
+static volatile bool test_active;
+
+static void tx_led_off_handler(struct k_work *work) { if (!test_active) gpio_reset(&can.tx_led); }
+static void rx_led_off_handler(struct k_work *work) { if (!test_active) gpio_reset(&can.rx_led); }
 
 static void bus_off_recovery_handler(struct k_work *work) {
     int ret = can_recover(can.device, K_MSEC(100));
@@ -254,21 +251,19 @@ static const struct can_filter dfu_filter = {
 
 /* ── Test button ──────────────────────────────────────────────────────────── */
 
-void lcu_can_test(void) {
-    gpio_set(&can.rx_led);
-    gpio_set(&can.tx_led);
-    k_work_reschedule(&can_test_leds_off_work, K_SECONDS(2));
-
-    send_lcu_status();
-
-    LOG_INF("CAN test: LEDs on, status frame enqueued");
-}
-
 static void on_test_button(void) {
     LOG_INF("Test button pressed — lighting all LEDs, sending status");
+    test_active = true;
     status_led_set_override(true);
-    lcu_can_test();
+    gpio_set(&can.rx_led);
+    gpio_set(&can.tx_led);
+    led_strip_set_all_pixels(lights.strip, lights.pixels, lights.num_pixels, 0xFF, 0xFF, 0xFF);
+    send_lcu_status();
     k_sleep(K_SECONDS(2));
+    test_active = false;
+    led_strip_clear_all_pixels(lights.strip, lights.pixels, lights.num_pixels);
+    gpio_reset(&can.rx_led);
+    gpio_reset(&can.tx_led);
     status_led_set_override(false);
     LOG_INF("Test button: done");
 }
@@ -290,7 +285,6 @@ void lcu_init(void) {
     k_work_init_delayable(&tx_led_off_work, tx_led_off_handler);
     k_work_init_delayable(&rx_led_off_work, rx_led_off_handler);
     k_work_init_delayable(&bus_off_recovery_work, bus_off_recovery_handler);
-    k_work_init_delayable(&can_test_leds_off_work, can_test_leds_off_handler);
     can_set_state_change_callback(can.device, can_state_change_cb, NULL);
 
     for (int i = 0; i < ARRAY_SIZE(lcu_can_filters); i++) {
