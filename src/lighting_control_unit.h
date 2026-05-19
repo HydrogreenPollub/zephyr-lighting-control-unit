@@ -16,8 +16,11 @@
 #include "led_strip_ctrl.h"
 #include "can_ids.h"
 
-#define STRIP_NODE		DT_ALIAS(led_strip)
-#define STRIP_NUM_PIXELS 16
+#define LEFT_STRIP_NODE   DT_ALIAS(led_strip_left)
+#define RIGHT_STRIP_NODE  DT_ALIAS(led_strip_right)
+
+/* Pull the length dynamically from your Devicetree to stay synchronized */
+#define STRIP_NUM_PIXELS  DT_PROP(LEFT_STRIP_NODE, chain_length)
 
 typedef struct lcu_can_t {
     const struct device *device;
@@ -26,8 +29,10 @@ typedef struct lcu_can_t {
 } lcu_can_t;
 
 typedef struct lcu_lights_t {
-    const struct device *const strip;
-    struct led_rgb pixels[STRIP_NUM_PIXELS];
+    const struct device *left_strip;   /* Removed const here for easy runtime struct assignment */
+    const struct device *right_strip;  /* Removed const here */
+    struct led_rgb pixels_left[STRIP_NUM_PIXELS];
+    struct led_rgb pixels_right[STRIP_NUM_PIXELS];
     uint8_t lights_mask;
     uint8_t num_pixels;
 } lcu_lights_t;

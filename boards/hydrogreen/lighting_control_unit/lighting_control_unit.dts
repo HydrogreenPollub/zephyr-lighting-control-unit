@@ -13,7 +13,8 @@
 		can-tx-led = &can_tx_led;
 		status-led = &status_led;
 		button-test = &button_test;
-		led-strip = &led_strip;
+		led-strip-left = &led_strip_left;
+		led-strip-right = &led_strip_right;
 		can = &fdcan2;
 		watchdog0 = &iwdg;
 		die-temp0 = &die_temp;
@@ -120,38 +121,40 @@
 &spi1 {
 	pinctrl-0 = <&spi1_sck_pa5 &spi1_mosi_pa7>;
 	pinctrl-names = "default";
-//	cs-gpios = <&gpiob 6 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 	status = "okay";
 
-	led_strip: ws2812@0 {
+	led_strip_left: ws2812@0 {
 		compatible = "worldsemi,ws2812-spi";
 		reg = <0>;
-		spi-max-frequency = <4000000>;
-		frame-format = <32768>; /* SPI_FRAME_FORMAT_TI */
+		spi-max-frequency = <6400000>; /* Safe hardware clock divide on an 80MHz core */
 		chain-length = <95>;
-
-		spi-one-frame = <0x70>;
-		spi-zero-frame = <0x40>;
+		status = "okay";
+		spi-one-frame = <0xfe>;       /* Strict 8-bit WS2812 symbol mapping */
+		spi-zero-frame = <0xc0>;      /* Strict 8-bit WS2812 symbol mapping */
 		color-mapping = <LED_COLOR_ID_GREEN
 						 LED_COLOR_ID_RED
 						 LED_COLOR_ID_BLUE>;
 	};
 };
 
-//&spi2 {
-//	pinctrl-0 = <&spi2_nss_pb12 &spi2_sck_pb13
-//				 &spi2_miso_pb14 &spi2_mosi_pb15>;
-//	pinctrl-names = "default";
-//	status = "okay";
-//};
+&spi3 {
+	pinctrl-0 = <&spi3_sck_pb3 &spi3_mosi_pb5>;
+	pinctrl-names = "default";
+	status = "okay";
 
-//&spi3 {
-//	/* SPI3 on the ST Morpho Connector CN7 pins 17, 1, 2, 3*/
-//	pinctrl-0 = <&spi3_nss_pa15 &spi3_sck_pc10
-//				 &spi3_miso_pc11 &spi3_mosi_pc12>;
-//	pinctrl-names = "default";
-//	status = "okay";
-//};
+	led_strip_right: ws2812@0 {
+		compatible = "worldsemi,ws2812-spi";
+		reg = <0>;
+		spi-max-frequency = <6400000>; /* Safe hardware clock divide on an 80MHz core */
+		chain-length = <95>;
+		status = "okay";
+		spi-one-frame = <0xfe>;       /* Strict 8-bit WS2812 symbol mapping */
+		spi-zero-frame = <0xc0>;      /* Strict 8-bit WS2812 symbol mapping */
+		color-mapping = <LED_COLOR_ID_GREEN
+						 LED_COLOR_ID_RED
+						 LED_COLOR_ID_BLUE>;
+	};
+};
 
 //&timers2 {
 //	status = "okay";

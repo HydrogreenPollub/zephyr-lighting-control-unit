@@ -6,6 +6,7 @@
 LOG_MODULE_REGISTER(led_strip_ctrl, LOG_LEVEL_INF);
 
 int led_strip_init(const struct device *strip) {
+
     if (device_is_ready(strip)) {
         LOG_INF("Found LED strip device %s", strip->name);
         return 0;
