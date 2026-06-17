@@ -66,6 +66,14 @@
 	status = "okay";
 };
 
+&gpioc {
+	status = "okay";
+};
+
+&gpiof {
+	status = "okay";
+};
+
 
 &clk_lsi {
 	status = "okay";
@@ -126,11 +134,32 @@
 	led_strip_left: ws2812@0 {
 		compatible = "worldsemi,ws2812-spi";
 		reg = <0>;
-		spi-max-frequency = <6400000>; /* Safe hardware clock divide on an 80MHz core */
+		/* Match lcu_ws28_spi: 80 MHz / 32 = 2.5 MHz, ControllersTech byte mapping */
+		spi-max-frequency = <2500000>;
 		chain-length = <95>;
 		status = "okay";
-		spi-one-frame = <0xfe>;       /* Strict 8-bit WS2812 symbol mapping */
-		spi-zero-frame = <0xc0>;      /* Strict 8-bit WS2812 symbol mapping */
+		spi-one-frame = <0x06>;
+		spi-zero-frame = <0x04>;
+		color-mapping = <LED_COLOR_ID_GREEN
+						 LED_COLOR_ID_RED
+						 LED_COLOR_ID_BLUE>;
+	};
+};
+
+&spi2 {
+	pinctrl-0 = <&spi2_sck_pf1 &spi2_mosi_pb15>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	led_strip_right: ws2812@0 {
+		compatible = "worldsemi,ws2812-spi";
+		reg = <0>;
+		/* Match lcu_ws28_spi: 80 MHz / 32 = 2.5 MHz, ControllersTech byte mapping */
+		spi-max-frequency = <2500000>;
+		chain-length = <95>;
+		status = "okay";
+		spi-one-frame = <0x06>;
+		spi-zero-frame = <0x04>;
 		color-mapping = <LED_COLOR_ID_GREEN
 						 LED_COLOR_ID_RED
 						 LED_COLOR_ID_BLUE>;
@@ -142,14 +171,15 @@
 	pinctrl-names = "default";
 	status = "okay";
 
-	led_strip_right: ws2812@0 {
+	led_strip_spi3_pb5: ws2812@0 {
 		compatible = "worldsemi,ws2812-spi";
 		reg = <0>;
-		spi-max-frequency = <6400000>; /* Safe hardware clock divide on an 80MHz core */
+		/* Placeholder SPI3 config on PB5 for bench wiring parity */
+		spi-max-frequency = <2500000>;
 		chain-length = <95>;
 		status = "okay";
-		spi-one-frame = <0xfe>;       /* Strict 8-bit WS2812 symbol mapping */
-		spi-zero-frame = <0xc0>;      /* Strict 8-bit WS2812 symbol mapping */
+		spi-one-frame = <0x06>;
+		spi-zero-frame = <0x04>;
 		color-mapping = <LED_COLOR_ID_GREEN
 						 LED_COLOR_ID_RED
 						 LED_COLOR_ID_BLUE>;

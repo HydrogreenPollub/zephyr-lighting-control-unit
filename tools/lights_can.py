@@ -22,6 +22,7 @@ Usage:
 
 Requirements:
     pip install python-can[gs_usb] libusb
+    PeakCAN/PCAN: install PEAK PCAN-Basic drivers; use --interface pcan
 """
 
 import argparse
@@ -32,7 +33,10 @@ try:
     import can
 except ImportError:
     print("Error: python-can not installed. Run: pip install python-can[gs_usb] libusb")
+    print("PeakCAN/PCAN also requires PEAK PCAN-Basic drivers.")
     sys.exit(1)
+
+from can_backend import add_can_backend_args, backend_label, open_bus
 
 
 def _patch_libusb() -> None:
@@ -97,7 +101,7 @@ def _print_mask(mask: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Set LCU lighting state via CAN (Candlelight / gs_usb)",
+        description="Set LCU lighting state via CAN",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
@@ -117,8 +121,7 @@ def main() -> None:
                         help="Listen for LCU_STATUS replies for this many seconds after sending")
     parser.add_argument("--bitrate", "-b", type=int, default=500000,
                         help="CAN bitrate in bps")
-    parser.add_argument("--index", type=int, default=0,
-                        help="Adapter index (0 = first Candlelight adapter)")
+    add_can_backend_args(parser)
     args = parser.parse_args()
 
     # Build the lighting mask
@@ -152,7 +155,7 @@ def main() -> None:
             print("\nError: specify at least one light, --all-on, --all-off, or --raw")
             sys.exit(1)
 
-    print("LCU lighting control  (Candlelight / gs_usb)")
+    print(f"LCU lighting control  ({backend_label(args)})")
     print(f"  Adapter index : {args.index}")
     print(f"  Bitrate       : {args.bitrate} bps")
     print()
@@ -160,8 +163,7 @@ def main() -> None:
     print()
 
     try:
-        with can.Bus(interface="gs_usb", channel=0,
-                     bitrate=args.bitrate, index=args.index) as bus:
+        with open_bus(args) as bus:
             frame = can.Message(
                 arbitration_id=MCU_LIGHTING_ID,
                 is_extended_id=True,
@@ -201,6 +203,9 @@ def main() -> None:
         print(f"\nCAN bus error: {e}")
         if "NoBackendError" in str(e) or "No backend" in str(e):
             print("Hint: pip install libusb")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\nStopped.")
         sys.exit(1)
     except Exception as e:
         if "NoBackendError" in type(e).__name__ or "No backend" in str(e):

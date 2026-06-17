@@ -10,6 +10,7 @@ build*/
 
 # Python virtual environment
 .venv/
+__pycache__/
 
 # Misc OS / IDE files
 *.pyc

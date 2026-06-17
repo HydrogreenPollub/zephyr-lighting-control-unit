@@ -5,11 +5,11 @@ Sends a signed firmware binary to the device using the DFU protocol over CAN.
 The device must be running and the DFU module must be active.
 
 Protocol:
-  1. Send REQUEST  (0x7E0): byte[0]=0x01, byte[1-4]=image_size (LE)
-  2. Device replies (0x7E2): byte[0]=0x00 (OK)
-  3. Send DATA     (0x7E1): byte[0-1]=seq (LE), byte[2-7]=up to 6 bytes of firmware
-  4. Send COMMIT   (0x7E0): byte[0]=0xFF, byte[1-4]=CRC32 (LE)
-  5. Device replies (0x7E2): byte[0]=0x00 (OK), then reboots after 1 s
+  1. Send REQUEST  (0x7E4): byte[0]=0x01, byte[1-4]=image_size (LE)
+  2. Device replies (0x7E6): byte[0]=0x00 (OK)
+  3. Send DATA     (0x7E5): byte[0-1]=seq (LE), byte[2-7]=up to 6 bytes of firmware
+  4. Send COMMIT   (0x7E4): byte[0]=0xFF, byte[1-4]=CRC32 (LE)
+  5. Device replies (0x7E6): byte[0]=0x00 (OK), then reboots after 1 s
 
 Usage:
     python dfu_can.py build/zephyr/zephyr.signed.bin
@@ -18,6 +18,7 @@ Usage:
 
 Requirements:
     pip install python-can[gs_usb] libusb
+    PeakCAN/PCAN: install PEAK PCAN-Basic drivers; use --interface pcan
     Windows: WinUSB driver (already installed with candleLight) + libusb DLL via `pip install libusb`
     No driver change needed — SavvyCAN continues to work alongside this script.
 """
@@ -33,7 +34,10 @@ try:
     import can
 except ImportError:
     print("Error: python-can not installed. Run: pip install python-can[gs_usb] libusb")
+    print("PeakCAN/PCAN also requires PEAK PCAN-Basic drivers.")
     sys.exit(1)
+
+from can_backend import add_can_backend_args, backend_label, open_bus
 
 def _patch_libusb() -> None:
     """
@@ -193,7 +197,7 @@ def run_dfu(bus: "can.BusABC", firmware: bytes, frame_delay_ms: float) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Firmware updater via CAN DFU (Candlelight USB adapter)",
+        description="Firmware updater via CAN DFU",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -204,10 +208,7 @@ def main() -> None:
         "--bitrate", "-b", type=int, default=500000,
         help="CAN bitrate in bps",
     )
-    parser.add_argument(
-        "--index", type=int, default=0,
-        help="Adapter index (0 = first Candlelight adapter)",
-    )
+    add_can_backend_args(parser)
     parser.add_argument(
         "--delay", "-d", type=float, default=5.0,
         help="Inter-frame delay in ms. Increase if the device reports SEQ_FAIL.",
@@ -224,14 +225,14 @@ def main() -> None:
         print("Error: firmware file is empty")
         sys.exit(1)
 
-    print("DFU over CAN  (Candlelight / gs_usb)")
+    print(f"DFU over CAN  ({backend_label(args)})")
     print(f"  Adapter index : {args.index}")
     print(f"  Bitrate       : {args.bitrate} bps")
     print(f"  Firmware      : {fw_path}")
     print()
 
     try:
-        with can.Bus(interface="gs_usb", channel=0, bitrate=args.bitrate, index=args.index) as bus:
+        with open_bus(args) as bus:
             run_dfu(bus, firmware, frame_delay_ms=args.delay)
     except TimeoutError as e:
         print(f"\nError: {e}")

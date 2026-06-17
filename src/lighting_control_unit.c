@@ -2,6 +2,8 @@
 // Created by inż. Dawid Pisarczyk on 28.12.2025.
 //
 
+#include <errno.h>
+
 #include "lighting_control_unit.h"
 #include "lcu_dfu.h"
 #include "status_led.h"
@@ -17,6 +19,9 @@ LOG_MODULE_REGISTER(lighting_control_unit, LOG_LEVEL_INF);
 #define LCU_CAN_TX_THREAD_PRIORITY    5
 #define LCU_CAN_PERIODIC_STACK_SIZE   2048
 #define LCU_CAN_PERIODIC_PRIORITY     5
+#define CAN_TX_PROBE_INTERVAL_MS      5000
+#define LIGHT_RENDER_INTERVAL_MS      100
+#define LIGHT_BLINK_INTERVAL_MS       500
 
 K_THREAD_STACK_DEFINE(lcu_can_tx_stack, LCU_CAN_TX_THREAD_STACK_SIZE);
 K_THREAD_STACK_DEFINE(lcu_can_periodic_stack, LCU_CAN_PERIODIC_STACK_SIZE);
@@ -30,6 +35,11 @@ static volatile int can_tx_result;
 static struct k_work_delayable tx_led_off_work;
 static struct k_work_delayable rx_led_off_work;
 static struct k_work_delayable bus_off_recovery_work;
+static volatile enum can_state lcu_can_state = CAN_STATE_STOPPED;
+static enum can_state last_suspended_log_state = CAN_STATE_STOPPED;
+static int64_t last_can_tx_probe_ms;
+static bool can_tx_suspended_logged;
+static volatile bool lights_dirty = true;
 
 static const struct can_filter lcu_can_filters[] = {
     CAN_FILTER(CAN_ID_BRAKE_PEDAL_VOLTAGE),
@@ -74,6 +84,81 @@ static void bus_off_recovery_handler(struct k_work *work) {
     }
 }
 
+static const char *can_state_name(enum can_state state) {
+    switch (state) {
+    case CAN_STATE_ERROR_ACTIVE:
+        return "error-active";
+    case CAN_STATE_ERROR_WARNING:
+        return "error-warning";
+    case CAN_STATE_ERROR_PASSIVE:
+        return "error-passive";
+    case CAN_STATE_BUS_OFF:
+        return "bus-off";
+    case CAN_STATE_STOPPED:
+        return "stopped";
+    default:
+        return "unknown";
+    }
+}
+
+static enum can_state get_current_can_state(void) {
+    enum can_state state = lcu_can_state;
+    struct can_bus_err_cnt err_cnt;
+
+    if (can_get_state(can.device, &state, &err_cnt) == 0) {
+        lcu_can_state = state;
+    }
+
+    return state;
+}
+
+static bool can_tx_allowed(void) {
+    enum can_state state = get_current_can_state();
+
+    if (state == CAN_STATE_ERROR_ACTIVE) {
+        can_tx_suspended_logged = false;
+        return true;
+    }
+
+    if (state == CAN_STATE_ERROR_WARNING || state == CAN_STATE_ERROR_PASSIVE) {
+        int64_t now = k_uptime_get();
+
+        if (now - last_can_tx_probe_ms >= CAN_TX_PROBE_INTERVAL_MS) {
+            last_can_tx_probe_ms = now;
+            return true;
+        }
+    }
+
+    k_msgq_purge(&lcu_can_tx_msgq);
+    if (!can_tx_suspended_logged || state != last_suspended_log_state) {
+        LOG_WRN("CAN TX suspended while bus is %s", can_state_name(state));
+        can_tx_suspended_logged = true;
+        last_suspended_log_state = state;
+    }
+
+    if (state == CAN_STATE_BUS_OFF) {
+        k_work_reschedule(&bus_off_recovery_work, K_MSEC(100));
+    }
+
+    return false;
+}
+
+static void update_status_led_for_can_state(enum can_state state) {
+    switch (state) {
+    case CAN_STATE_ERROR_ACTIVE:
+        status_led_set(STATUS_LED_OPERATIONAL);
+        break;
+    case CAN_STATE_ERROR_WARNING:
+    case CAN_STATE_ERROR_PASSIVE:
+    case CAN_STATE_BUS_OFF:
+        status_led_set(STATUS_LED_WARNING);
+        break;
+    default:
+        status_led_set(STATUS_LED_WARNING);
+        break;
+    }
+}
+
 static void can_state_change_cb(const struct device *dev,
                                 enum can_state state,
                                 struct can_bus_err_cnt err_cnt,
@@ -83,17 +168,19 @@ static void can_state_change_cb(const struct device *dev,
 
     LOG_WRN("CAN state: %d (tx_err=%d rx_err=%d)",
             state, err_cnt.tx_err_cnt, err_cnt.rx_err_cnt);
+    lcu_can_state = state;
 
     switch (state) {
     case CAN_STATE_ERROR_ACTIVE:
-        status_led_set(STATUS_LED_OPERATIONAL);
+        can_tx_suspended_logged = false;
+        update_status_led_for_can_state(state);
         break;
     case CAN_STATE_ERROR_WARNING:
     case CAN_STATE_ERROR_PASSIVE:
-        status_led_set(STATUS_LED_WARNING);
+        update_status_led_for_can_state(state);
         break;
     case CAN_STATE_BUS_OFF:
-        status_led_set(STATUS_LED_BUS_OFF);
+        update_status_led_for_can_state(state);
         k_msgq_purge(&lcu_can_tx_msgq);
         k_work_reschedule(&bus_off_recovery_work, K_MSEC(100));
         break;
@@ -114,14 +201,34 @@ static void lcu_can_tx_thread(void *p1, void *p2, void *p3) {
     while (1) {
         k_msgq_get(&lcu_can_tx_msgq, &frame, K_FOREVER);
 
+        if (!can_tx_allowed()) {
+            k_sleep(K_MSEC(500));
+            continue;
+        }
+
+        k_sem_reset(&can_tx_done_sem);
         int ret = can_send(can.device, &frame, K_MSEC(100), lcu_can_tx_callback, NULL);
         if (ret) {
-            LOG_ERR("CAN send failed: %d", ret);
+            if (ret == -EAGAIN) {
+                if (get_current_can_state() == CAN_STATE_ERROR_ACTIVE) {
+                    LOG_WRN("CAN TX mailbox unavailable; dropping queued frames");
+                }
+                k_msgq_purge(&lcu_can_tx_msgq);
+                k_sleep(K_MSEC(500));
+            } else {
+                LOG_ERR("CAN send failed: %d", ret);
+            }
             continue;
         }
 
         if (k_sem_take(&can_tx_done_sem, K_MSEC(200)) != 0) {
-            LOG_ERR("CAN TX timeout");
+            enum can_state state = get_current_can_state();
+            if (state == CAN_STATE_ERROR_ACTIVE) {
+                LOG_WRN("CAN TX timeout while bus is %s; dropping queued frames",
+                        can_state_name(state));
+            }
+            k_msgq_purge(&lcu_can_tx_msgq);
+            k_sleep(K_MSEC(500));
             continue;
         }
 
@@ -174,10 +281,72 @@ static void send_lcu_status(void) {
     PACK_AND_ENQUEUE(LCU_STATUS, lcu_status, &frame);
 }
 
+static void render_lights(bool blink_on) {
+    struct candef_mcu_lighting_t lighting;
+    uint8_t left_r = 0;
+    uint8_t left_g = 0;
+    uint8_t left_b = 0;
+    uint8_t right_r = 0;
+    uint8_t right_g = 0;
+    uint8_t right_b = 0;
+
+    candef_mcu_lighting_unpack(&lighting, &lights.lights_mask, sizeof(lights.lights_mask));
+
+    if (lighting.position_light) {
+        left_r = right_r = 0x10;
+        left_g = right_g = 0x10;
+        left_b = right_b = 0x10;
+    }
+
+    if (lighting.headlight) {
+        left_r = right_r = 0x60;
+        left_g = right_g = 0x60;
+        left_b = right_b = 0x60;
+    }
+
+    if (lighting.brake_light) {
+        left_r = right_r = 0x80;
+        left_g = right_g = 0x00;
+        left_b = right_b = 0x00;
+    }
+
+    if (blink_on && lighting.hazard) {
+        left_r = right_r = 0x80;
+        left_g = right_g = 0x40;
+        left_b = right_b = 0x00;
+    } else if (blink_on) {
+        if (lighting.left_indicator) {
+            left_r = 0x80;
+            left_g = 0x40;
+            left_b = 0x00;
+        }
+        if (lighting.right_indicator) {
+            right_r = 0x80;
+            right_g = 0x40;
+            right_b = 0x00;
+        }
+    }
+
+    int ret = led_strip_set_all_pixels(lights.left_strip, lights.pixels_left, lights.num_pixels,
+                                       left_r, left_g, left_b);
+    if (ret != 0) {
+        LOG_WRN("Failed to update left LED strip: %d", ret);
+    }
+    ret = led_strip_set_all_pixels(lights.right_strip, lights.pixels_right, lights.num_pixels,
+                                   right_r, right_g, right_b);
+    if (ret != 0) {
+        LOG_WRN("Failed to update right LED strip: %d", ret);
+    }
+}
+
 /* ── Periodic CAN TX ──────────────────────────────────────────────────────── */
 
 static void lcu_can_periodic_thread(void *p1, void *p2, void *p3) {
     uint8_t cnt_1000ms = 0;
+    uint8_t light_render_ticks = 0;
+    uint16_t blink_ticks = 0;
+    bool blink_on = true;
+
     while (1) {
         k_sleep(K_MSEC(10));
 
@@ -190,6 +359,20 @@ static void lcu_can_periodic_thread(void *p1, void *p2, void *p3) {
         if (cnt_1000ms >= 100) {
             cnt_1000ms = 0;
             send_lcu_status();
+        }
+
+        blink_ticks += 10;
+        if (blink_ticks >= LIGHT_BLINK_INTERVAL_MS) {
+            blink_ticks = 0;
+            blink_on = !blink_on;
+            lights_dirty = true;
+        }
+
+        light_render_ticks += 10;
+        if (lights_dirty && light_render_ticks >= LIGHT_RENDER_INTERVAL_MS) {
+            light_render_ticks = 0;
+            lights_dirty = false;
+            render_lights(blink_on);
         }
     }
 }
@@ -227,6 +410,7 @@ static void lcu_mcu_lighting_rx_cb(const struct device *dev, struct can_frame *f
         struct candef_mcu_lighting_t msg;
         candef_mcu_lighting_unpack(&msg, frame->data, frame->dlc);
         lights.lights_mask = frame->data[0];
+        lights_dirty = true;
         LOG_INF("MCU_LIGHTING: 0x%02X (H=%d P=%d B=%d L=%d R=%d Hz=%d)",
                 lights.lights_mask, msg.headlight, msg.position_light,
                 msg.brake_light, msg.left_indicator, msg.right_indicator,
@@ -254,38 +438,55 @@ static const struct can_filter dfu_filter = {
 /* ── Test button ──────────────────────────────────────────────────────────── */
 
 static void on_test_button(void) {
-    LOG_INF("Test button pressed — lighting all LEDs, sending status");
+    LOG_INF("Test button pressed - lighting board LEDs");
     test_active = true;
     status_led_set_override(true);
     gpio_set(&can.rx_led);
     gpio_set(&can.tx_led);
+    const uint32_t total_ms = 2000;
+    const uint32_t phase_ms = total_ms / 3;
 
-    /* Write to both physical SPI buses separately */
-    led_strip_set_all_pixels(lights.left_strip, lights.pixels_left, lights.num_pixels, 0xFF, 0xFF, 0xFF);
-    led_strip_set_all_pixels(lights.right_strip, lights.pixels_right, lights.num_pixels, 0xFF, 0xFF, 0xFF);
+    /* R */
+    led_strip_set_all_pixels(lights.left_strip, lights.pixels_left, lights.num_pixels,
+                             0x60, 0x00, 0x00);
+    led_strip_set_all_pixels(lights.right_strip, lights.pixels_right, lights.num_pixels,
+                             0x60, 0x00, 0x00);
+    k_sleep(K_MSEC(phase_ms));
 
-    send_lcu_status();
-    k_sleep(K_SECONDS(2));
+    /* G */
+    led_strip_set_all_pixels(lights.left_strip, lights.pixels_left, lights.num_pixels,
+                             0x00, 0x60, 0x00);
+    led_strip_set_all_pixels(lights.right_strip, lights.pixels_right, lights.num_pixels,
+                             0x00, 0x60, 0x00);
+    k_sleep(K_MSEC(phase_ms));
+
+    /* B (remaining time to reach 2s total) */
+    led_strip_set_all_pixels(lights.left_strip, lights.pixels_left, lights.num_pixels,
+                             0x00, 0x00, 0x60);
+    led_strip_set_all_pixels(lights.right_strip, lights.pixels_right, lights.num_pixels,
+                             0x00, 0x00, 0x60);
+    k_sleep(K_MSEC(total_ms - 2 * phase_ms));
     test_active = false;
-
-    /* Clear both physical SPI buses */
-    led_strip_clear_all_pixels(lights.left_strip, lights.pixels_left, lights.num_pixels);
-    led_strip_clear_all_pixels(lights.right_strip, lights.pixels_right, lights.num_pixels);
 
     gpio_reset(&can.rx_led);
     gpio_reset(&can.tx_led);
     status_led_set_override(false);
+    lights_dirty = true;
     LOG_INF("Test button: done");
 }
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
 
 static void lcu_lights_init(void) {
-    led_strip_init(lights.left_strip);
-    led_strip_init(lights.right_strip);
-
+    if (led_strip_init(lights.left_strip) != 0) {
+        LOG_ERR("Left strip init failed");
+    }
+    if (led_strip_init(lights.right_strip) != 0) {
+        LOG_ERR("Right strip init failed");
+    }
     led_strip_clear_all_pixels(lights.left_strip, lights.pixels_left, lights.num_pixels);
     led_strip_clear_all_pixels(lights.right_strip, lights.pixels_right, lights.num_pixels);
+    lights_dirty = true;
 }
 
 /* ── Init ─────────────────────────────────────────────────────────────────── */
@@ -331,7 +532,10 @@ void lcu_init(void) {
         GPIO_DT_SPEC_GET(DT_ALIAS(button_test), gpios);
 
     status_led_init(&status_led_gpio, NULL);
-    test_button_init(&test_btn_gpio, on_test_button);
+    update_status_led_for_can_state(get_current_can_state());
+    if (test_button_init(&test_btn_gpio, on_test_button) != 0) {
+        LOG_ERR("Test button initialization failed");
+    }
 }
 
 void lcu_on_tick(void) {
