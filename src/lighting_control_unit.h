@@ -14,7 +14,7 @@
 #include "gpio.h"
 #include "can.h"
 #include "led_strip_ctrl.h"
-#include "can_ids.h"
+#include "candef.h"
 
 #define LEFT_STRIP_NODE   DT_ALIAS(led_strip_left)
 #define RIGHT_STRIP_NODE  DT_ALIAS(led_strip_right)
@@ -33,7 +33,7 @@ typedef struct lcu_lights_t {
     const struct device *right_strip;  /* Removed const here */
     struct led_rgb pixels_left[STRIP_NUM_PIXELS];
     struct led_rgb pixels_right[STRIP_NUM_PIXELS];
-    uint8_t lights_mask;
+    struct candef_mcu_lighting_t lighting;
     uint8_t num_pixels;
 } lcu_lights_t;
 
