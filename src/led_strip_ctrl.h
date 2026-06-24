@@ -19,7 +19,9 @@
 
 int led_strip_init(const struct device *strip);
 int led_strip_set_pixel(const struct device *strip, struct led_rgb *pixels, size_t pixel_index, size_t num_pixels, uint8_t r, uint8_t g, uint8_t b);
+int led_strip_set_range(const struct device *strip, struct led_rgb *pixels, size_t range_start, size_t range_end, size_t num_pixels, uint8_t r, uint8_t g, uint8_t b);
 int led_strip_set_all_pixels(const struct device *strip, struct led_rgb *pixels, size_t num_pixels, uint8_t r, uint8_t g, uint8_t b);
 int led_strip_clear_all_pixels(const struct device *strip, struct led_rgb *pixels, size_t num_pixels);
+int led_strip_flush(const struct device *strip, struct led_rgb *pixels, size_t num_pixels);
 
 #endif //LED_STRIP_CTRL_H

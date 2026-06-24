@@ -136,7 +136,7 @@
 		reg = <0>;
 		/* Match lcu_ws28_spi: 80 MHz / 32 = 2.5 MHz, ControllersTech byte mapping */
 		spi-max-frequency = <2500000>;
-		chain-length = <95>;
+		chain-length = <50>;
 		status = "okay";
 		spi-one-frame = <0x06>;
 		spi-zero-frame = <0x04>;
@@ -156,7 +156,7 @@
 		reg = <0>;
 		/* Match lcu_ws28_spi: 80 MHz / 32 = 2.5 MHz, ControllersTech byte mapping */
 		spi-max-frequency = <2500000>;
-		chain-length = <95>;
+		chain-length = <50>;
 		status = "okay";
 		spi-one-frame = <0x06>;
 		spi-zero-frame = <0x04>;
@@ -171,10 +171,10 @@
 	pinctrl-names = "default";
 	status = "okay";
 
-	led_strip_spi3_pb5: ws2812@0 {
+	/*led_strip_spi3_pb5: ws2812@0 {
 		compatible = "worldsemi,ws2812-spi";
 		reg = <0>;
-		/* Placeholder SPI3 config on PB5 for bench wiring parity */
+		 Placeholder SPI3 config on PB5 for bench wiring parity
 		spi-max-frequency = <2500000>;
 		chain-length = <95>;
 		status = "okay";
@@ -183,7 +183,9 @@
 		color-mapping = <LED_COLOR_ID_GREEN
 						 LED_COLOR_ID_RED
 						 LED_COLOR_ID_BLUE>;
-	};
+	};*/
+
+
 };
 
 //&timers2 {

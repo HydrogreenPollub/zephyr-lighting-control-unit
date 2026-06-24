@@ -49,3 +49,5 @@ target_sources(app PRIVATE
         peripherals/test_button.c
         can-definitions/candef.c
 )
+
+target_compile_definitions(app PRIVATE LCU_FRONT_PCB)

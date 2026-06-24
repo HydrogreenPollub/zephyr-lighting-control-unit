@@ -80,7 +80,7 @@ def _decode_lcu_status(data: bytes) -> str:
     if len(data) < 1:
         return "empty"
     b = data[0]
-    instance = "FRONT" if (b & 0x01) == 0 else "BACK"
+    instance = "FRONT" if (b & 0x01) == 0 else "REAR"
     fault    = "FAULT" if (b & 0x02) else "OK"
     lights = []
     if b & 0x04: lights.append("HEADLIGHT")

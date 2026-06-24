@@ -36,7 +36,8 @@ int main(void) {
     //     .pixels = {},
     //     .lights_mask = 0,
     // };
-
+    //LOG_INF("SPI2 ready: %d", device_is_ready(DEVICE_DT_GET(DT_NODELABEL(spi2))));
+    //LOG_INF("SPI3 ready: %d", device_is_ready(DEVICE_DT_GET(DT_NODELABEL(spi3))));
     while (1) {
         // k_sleep(K_FOREVER);
         lcu_on_tick();
