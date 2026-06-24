@@ -56,8 +56,9 @@ static bool hazard_lights_modifier;
     #endif
 #endif
 
-static const struct can_filter mcu_lighting_filter = {
-    .id    = CANDEF_MCU_LIGHTING_FRAME_ID,
+/* SWU_LCU_INPUTS (0x302, extended) - lighting commands from steering wheel */
+static const struct can_filter swu_lcu_inputs_filter = {
+    .id    = CANDEF_SWU_LCU_INPUTS_FRAME_ID,
     .mask  = CAN_EXT_ID_MASK,
     .flags = CAN_FRAME_IDE,
 };
@@ -79,8 +80,8 @@ lcu_lights_t lights = {
     .left_strip  = DEVICE_DT_GET(LEFT_STRIP_NODE),
     .right_strip = DEVICE_DT_GET(RIGHT_STRIP_NODE),
     .num_pixels  = STRIP_NUM_PIXELS,
-    .pixels_left  = {0},
-    .pixels_right = {0},
+    .pixels_left  = {{0}},
+    .pixels_right = {{0}},
 };
 
 static volatile bool test_active;
@@ -320,8 +321,14 @@ static void send_lcu_status(void)
 {
     lcu_can_tx_led_pulse();
     struct candef_lcu_status_t frame = {
-        .instance = LCU_INSTANCE_ID,
-        .fault    = CANDEF_LCU_STATUS_FAULT_OK_CHOICE,
+        .instance        = LCU_INSTANCE_ID,
+        .fault           = CANDEF_LCU_STATUS_FAULT_OK_CHOICE,
+        .headlight       = current_lighting.headlight,
+        .position_light  = current_lighting.position_light,
+        .brake_light     = current_lighting.brake_light,
+        .left_indicator  = current_lighting.left_indicator,
+        .right_indicator = current_lighting.right_indicator,
+        .hazard          = current_lighting.hazard,
     };
     PACK_AND_ENQUEUE(LCU_STATUS, lcu_status, &frame);
 }
@@ -351,32 +358,40 @@ static void lcu_can_periodic_thread(void *p1, void *p2, void *p3)
 
 /* ── CAN RX ───────────────────────────────────────────────────────────────── */
 
-static void lcu_mcu_lighting_rx_cb(const struct device *dev,
-                                   struct can_frame *frame,
-                                   void *user_data)
+static void lcu_swu_lcu_inputs_rx_cb(const struct device *dev,
+                                     struct can_frame *frame,
+                                     void *user_data)
 {
     ARG_UNUSED(dev);
     ARG_UNUSED(user_data);
 
     lcu_can_rx_led_pulse();
 
-    if (frame->dlc >= CANDEF_MCU_LIGHTING_LENGTH) {
+    if (frame->dlc >= CANDEF_SWU_LCU_INPUTS_LENGTH) {
+        struct candef_swu_lcu_inputs_t swu_inputs;
+
         previous_lighting = current_lighting;
-        candef_mcu_lighting_unpack(&current_lighting, frame->data, frame->dlc);
-        LOG_INF("MCU_LIGHTING received: H=%d P=%d B=%d L=%d R=%d",
+        candef_swu_lcu_inputs_unpack(&swu_inputs, frame->data, frame->dlc);
+        current_lighting.headlight = swu_inputs.beam;
+        current_lighting.position_light = swu_inputs.position;
+        current_lighting.left_indicator = swu_inputs.left_indicator;
+        current_lighting.right_indicator = swu_inputs.right_indicator;
+        current_lighting.hazard = swu_inputs.hazard;
+        current_lighting.brake_light = swu_inputs.brake_light;
+
+        LOG_INF("SWU_LCU_INPUTS received: H=%d P=%d B=%d L=%d R=%d Hz=%d",
                 current_lighting.headlight, current_lighting.position_light,
                 current_lighting.brake_light, current_lighting.left_indicator,
-                current_lighting.right_indicator);
+                current_lighting.right_indicator, current_lighting.hazard);
         if (current_lighting.headlight == previous_lighting.headlight &&
             current_lighting.position_light == previous_lighting.position_light &&
             current_lighting.brake_light == previous_lighting.brake_light &&
             current_lighting.left_indicator == previous_lighting.left_indicator &&
-            current_lighting.right_indicator == previous_lighting.right_indicator) {
+            current_lighting.right_indicator == previous_lighting.right_indicator &&
+            current_lighting.hazard == previous_lighting.hazard) {
             lighting_update_flag = 0;
-        }else {
-           // LOG_INF("Setting flag to update");
+        } else {
             lighting_update_flag = 1;
-
         }
     }
 }
@@ -696,7 +711,7 @@ void lcu_init(void)
 
     can_set_state_change_callback(can.device, can_state_change_cb, NULL);
 
-    can_add_rx_filter_(can.device, lcu_mcu_lighting_rx_cb, &mcu_lighting_filter);
+    can_add_rx_filter_(can.device, lcu_swu_lcu_inputs_rx_cb, &swu_lcu_inputs_filter);
     can_add_rx_filter_(can.device, lcu_dfu_rx_cb, &dfu_filter);
 
     lcu_dfu_init();

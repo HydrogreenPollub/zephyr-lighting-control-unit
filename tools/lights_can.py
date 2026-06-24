@@ -1,24 +1,24 @@
 """
 Set LCU lighting state via CAN — Candlelight USB adapter.
 
-Sends MCU_LIGHTING frames (0x400, extended) to control individual lights
-on the Lighting Control Unit. The LCU stores the state in memory.
+Sends SWU_LCU_INPUTS frames (0x302, extended) to control individual lights
+on the Lighting Control Unit, matching the steering-wheel lighting inputs.
 
-Lights (MCU_LIGHTING byte 0):
-  bit 0: HEADLIGHT
-  bit 1: POSITION_LIGHT
-  bit 2: BRAKE_LIGHT
-  bit 3: LEFT_INDICATOR
-  bit 4: RIGHT_INDICATOR
-  bit 5: HAZARD
+Lights (SWU_LCU_INPUTS byte 0):
+  bit 0: HAZARD
+  bit 1: BEAM
+  bit 2: POSITION
+  bit 3: RIGHT_INDICATOR
+  bit 4: LEFT_INDICATOR
+  bit 5: BRAKE_LIGHT
 
 Usage:
-    python lights_can.py --headlight on --brake on
+    python lights_can.py --beam on --brake on
     python lights_can.py --hazard on
     python lights_can.py --left-indicator on --position on
     python lights_can.py --all-off
     python lights_can.py --all-on
-    python lights_can.py --raw 0x3F             # all bits on
+    python lights_can.py --raw 0x3F             # all SWU_LCU_INPUTS bits on
 
 Requirements:
     pip install python-can[gs_usb] libusb
@@ -55,24 +55,24 @@ def _patch_libusb() -> None:
 _patch_libusb()
 
 # ── CAN IDs (extended frames) ────────────────────────────────────────────────
-MCU_LIGHTING_ID = 0x400
-LCU_STATUS_ID   = 0x401
+SWU_LCU_INPUTS_ID = 0x302
+LCU_STATUS_ID     = 0x401
 
-# ── Bit positions in MCU_LIGHTING byte 0 ─────────────────────────────────────
-BIT_HEADLIGHT       = 0
-BIT_POSITION_LIGHT  = 1
-BIT_BRAKE_LIGHT     = 2
-BIT_LEFT_INDICATOR  = 3
-BIT_RIGHT_INDICATOR = 4
-BIT_HAZARD          = 5
+# ── Bit positions in SWU_LCU_INPUTS byte 0 ───────────────────────────────────
+BIT_HAZARD          = 0
+BIT_BEAM            = 1
+BIT_POSITION        = 2
+BIT_RIGHT_INDICATOR = 3
+BIT_LEFT_INDICATOR  = 4
+BIT_BRAKE_LIGHT     = 5
 
 _LIGHT_NAMES = {
-    BIT_HEADLIGHT:       "HEADLIGHT",
-    BIT_POSITION_LIGHT:  "POSITION_LIGHT",
-    BIT_BRAKE_LIGHT:     "BRAKE_LIGHT",
-    BIT_LEFT_INDICATOR:  "LEFT_INDICATOR",
-    BIT_RIGHT_INDICATOR: "RIGHT_INDICATOR",
     BIT_HAZARD:          "HAZARD",
+    BIT_BEAM:            "BEAM",
+    BIT_POSITION:        "POSITION",
+    BIT_RIGHT_INDICATOR: "RIGHT_INDICATOR",
+    BIT_LEFT_INDICATOR:  "LEFT_INDICATOR",
+    BIT_BRAKE_LIGHT:     "BRAKE_LIGHT",
 }
 
 
@@ -93,7 +93,7 @@ def _decode_lcu_status(data: bytes) -> str:
 
 
 def _print_mask(mask: int) -> None:
-    print(f"  MCU_LIGHTING byte: 0x{mask:02X} (0b{mask:08b})")
+    print(f"  SWU_LCU_INPUTS byte: 0x{mask:02X} (0b{mask:08b})")
     for bit, name in sorted(_LIGHT_NAMES.items()):
         state = "ON" if mask & (1 << bit) else "off"
         print(f"    {name:<20} {state}")
@@ -105,14 +105,14 @@ def main() -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    parser.add_argument("--headlight",       choices=["on", "off"])
+    parser.add_argument("--beam", "--headlight", dest="beam", choices=["on", "off"])
     parser.add_argument("--position",        choices=["on", "off"])
     parser.add_argument("--brake",           choices=["on", "off"])
     parser.add_argument("--left-indicator",  choices=["on", "off"])
     parser.add_argument("--right-indicator", choices=["on", "off"])
     parser.add_argument("--hazard",          choices=["on", "off"])
-    parser.add_argument("--all-on",  action="store_true", help="Turn all lights on")
-    parser.add_argument("--all-off", action="store_true", help="Turn all lights off")
+    parser.add_argument("--all-on",  action="store_true", help="Turn all SWU lighting inputs on")
+    parser.add_argument("--all-off", action="store_true", help="Turn all SWU lighting inputs off")
     parser.add_argument("--raw", type=lambda x: int(x, 0), help="Send raw byte value (e.g. 0x3F)")
 
     parser.add_argument("--repeat", "-r", type=float, default=0,
@@ -134,12 +134,12 @@ def main() -> None:
     else:
         mask = 0
         flag_map = {
-            "headlight":       BIT_HEADLIGHT,
-            "position":        BIT_POSITION_LIGHT,
-            "brake":           BIT_BRAKE_LIGHT,
-            "left_indicator":  BIT_LEFT_INDICATOR,
-            "right_indicator": BIT_RIGHT_INDICATOR,
             "hazard":          BIT_HAZARD,
+            "beam":            BIT_BEAM,
+            "position":        BIT_POSITION,
+            "right_indicator": BIT_RIGHT_INDICATOR,
+            "left_indicator":  BIT_LEFT_INDICATOR,
+            "brake":           BIT_BRAKE_LIGHT,
         }
         any_set = False
         for name, bit in flag_map.items():
@@ -165,13 +165,13 @@ def main() -> None:
     try:
         with open_bus(args) as bus:
             frame = can.Message(
-                arbitration_id=MCU_LIGHTING_ID,
+                arbitration_id=SWU_LCU_INPUTS_ID,
                 is_extended_id=True,
                 data=bytes([mask]),
             )
 
             if args.repeat > 0:
-                print(f"Sending MCU_LIGHTING every {args.repeat:.1f} s  (Ctrl+C to stop)")
+                print(f"Sending SWU_LCU_INPUTS every {args.repeat:.1f} s  (Ctrl+C to stop)")
                 try:
                     while True:
                         bus.send(frame)
@@ -181,7 +181,7 @@ def main() -> None:
                     print("\nStopped.")
             else:
                 bus.send(frame)
-                print("Sent MCU_LIGHTING frame.")
+                print("Sent SWU_LCU_INPUTS frame.")
 
                 if args.listen > 0:
                     print(f"\nListening for LCU_STATUS (0x{LCU_STATUS_ID:03X}) for {args.listen:.0f} s ...")
