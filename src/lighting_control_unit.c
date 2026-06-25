@@ -51,9 +51,7 @@ static bool hazard_lights_modifier;
 #elif defined(LCU_REAR_PCB)
     #define REAR_TURN_SIGNAL_WIDTH 15
     #define REAR_TURN_SIGNAL_STOP_LIGHT_MARGIN 2
-    #ifndef LCU_INSTANCE_ID
-    #define LCU_INSTANCE_ID CANDEF_LCU_STATUS_INSTANCE_REAR_CHOICE
-    #endif
+    #define LCU_INSTANCE_ID CANDEF_LCU_STATUS_INSTANCE_BACK_CHOICE
 #endif
 
 /* SWU_LCU_INPUTS (0x302, extended) - lighting commands from steering wheel */

@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.13.1)
 
+set(LCU_TYPE "rear" CACHE STRING "Lighting control unit hardware position")
+set_property(CACHE LCU_TYPE PROPERTY STRINGS front rear)
+
+if(LCU_TYPE STREQUAL "front")
+    set(LCU_TYPE_DEFINE LCU_FRONT_PCB)
+elseif(LCU_TYPE STREQUAL "rear")
+    set(LCU_TYPE_DEFINE LCU_REAR_PCB)
+else()
+    message(FATAL_ERROR "Unknown LCU_TYPE: ${LCU_TYPE}")
+endif()
+
 if(NOT DEFINED BOARD)
     set(BOARD lighting_control_unit CACHE STRING "Zephyr target board")
     message(STATUS "BOARD not defined externally, using default: ${BOARD}")
@@ -50,4 +61,4 @@ target_sources(app PRIVATE
         can-definitions/candef.c
 )
 
-target_compile_definitions(app PRIVATE LCU_FRONT_PCB)
+target_compile_definitions(app PRIVATE ${LCU_TYPE_DEFINE})
