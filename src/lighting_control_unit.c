@@ -43,20 +43,32 @@ static bool brake_lights_modifier;
 static int8_t indicator_direction_modifier;
 static bool hazard_lights_modifier;
 
+static struct candef_mcu_analog_pedals_t current_pedals = {0};
+static struct candef_mcu_analog_pedals_t previous_pedals = {0};
+static volatile bool pedals_update_flag = false;
+
+
 #ifdef LCU_FRONT_PCB
     #define TURN_SIGNAL_SYMMETRY_SPLIT_POINT 23
     #ifndef LCU_INSTANCE_ID
-        #define LCU_INSTANCE_ID CANDEF_LCU_STATUS_INSTANCE_FRONT_CHOICE
+#define LCU_INSTANCE_ID CANDEF_LCU_STATUS_INSTANCE_FRONT_CHOICE
     #endif
 #elif defined(LCU_REAR_PCB)
     #define REAR_TURN_SIGNAL_WIDTH 15
     #define REAR_TURN_SIGNAL_STOP_LIGHT_MARGIN 2
     #define LCU_INSTANCE_ID CANDEF_LCU_STATUS_INSTANCE_BACK_CHOICE
+
 #endif
 
 /* SWU_LCU_INPUTS (0x302, extended) - lighting commands from steering wheel */
 static const struct can_filter swu_lcu_inputs_filter = {
     .id    = CANDEF_SWU_LCU_INPUTS_FRAME_ID,
+    .mask  = CAN_EXT_ID_MASK,
+    .flags = CAN_FRAME_IDE,
+};
+
+static const struct can_filter mcu_analog_pedals_filter = {
+    .id    = CANDEF_MCU_ANALOG_PEDALS_FRAME_ID,
     .mask  = CAN_EXT_ID_MASK,
     .flags = CAN_FRAME_IDE,
 };
@@ -355,6 +367,29 @@ static void lcu_can_periodic_thread(void *p1, void *p2, void *p3)
 }
 
 /* ── CAN RX ───────────────────────────────────────────────────────────────── */
+static void lcu_mcu_analog_pedals_rx_cb(const struct device *dev,
+                                        struct can_frame *frame,
+                                        void *user_data)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(user_data);
+
+    lcu_can_rx_led_pulse();
+
+    if (frame->dlc >= CANDEF_MCU_ANALOG_PEDALS_LENGTH) {
+        struct candef_mcu_analog_pedals_t pedals;
+
+        previous_pedals = current_pedals;
+
+        candef_mcu_analog_pedals_unpack(&pedals, frame->data, frame->dlc);
+        current_pedals = pedals;
+
+        LOG_INF("MCU_ANALOG_PEDALS received: accel=%.3f V brake=%.3f V",
+                (double)current_pedals.acceleration_pedal_voltage,
+                (double)current_pedals.brake_pedal_voltage);
+
+    }
+}
 
 static void lcu_swu_lcu_inputs_rx_cb(const struct device *dev,
                                      struct can_frame *frame,
@@ -393,6 +428,12 @@ static void lcu_swu_lcu_inputs_rx_cb(const struct device *dev,
         }
     }
 }
+
+
+
+
+
+
 
 static void lcu_dfu_rx_cb(const struct device *dev,
                            struct can_frame *frame,
@@ -465,6 +506,8 @@ static void render_brake_lights(void) {}
 static void render_running_lights(void) {
     led_strip_set_range(lights.left_strip, lights.pixels_left, 0, REAR_TURN_SIGNAL_WIDTH-1, lights.num_pixels, max(100*running_lights_modifier, brake_lights_modifier*255), 0, 0);
     led_strip_set_range(lights.left_strip, lights.pixels_left, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels-1, lights.num_pixels, max(100*running_lights_modifier, brake_lights_modifier*255), 0, 0);
+    led_strip_set_range(lights.right_strip, lights.pixels_right, 0, REAR_TURN_SIGNAL_WIDTH-1, lights.num_pixels, max(100*running_lights_modifier, brake_lights_modifier*255), 0, 0);
+    led_strip_set_range(lights.right_strip, lights.pixels_right, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels-1, lights.num_pixels, max(100*running_lights_modifier, brake_lights_modifier*255), 0, 0);
 }
 
 static void render_indicator(int8_t direction) {
@@ -473,8 +516,10 @@ static void render_indicator(int8_t direction) {
         num_of_leds_on = min(num_of_leds_on, REAR_TURN_SIGNAL_WIDTH);
         if (num_of_leds_on >= REAR_TURN_SIGNAL_WIDTH) {
             led_strip_set_range(lights.left_strip, lights.pixels_left, 0, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
+            led_strip_set_range(lights.right_strip, lights.pixels_right, 0, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
         } else {
             led_strip_set_range(lights.left_strip, lights.pixels_left, REAR_TURN_SIGNAL_WIDTH - num_of_leds_on, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
+            led_strip_set_range(lights.right_strip, lights.pixels_right, REAR_TURN_SIGNAL_WIDTH - num_of_leds_on, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
         }
     }
 
@@ -483,8 +528,12 @@ static void render_indicator(int8_t direction) {
         num_of_leds_on = min(num_of_leds_on, REAR_TURN_SIGNAL_WIDTH);
         if (num_of_leds_on >= REAR_TURN_SIGNAL_WIDTH) {
             led_strip_set_range(lights.left_strip, lights.pixels_left, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
+            led_strip_set_range(lights.right_strip, lights.pixels_right, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
+
         } else {
             led_strip_set_range(lights.left_strip, lights.pixels_left, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - REAR_TURN_SIGNAL_WIDTH + num_of_leds_on, lights.num_pixels, 0XFF, 0x32, 0x00);
+            led_strip_set_range(lights.right_strip, lights.pixels_right, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - REAR_TURN_SIGNAL_WIDTH + num_of_leds_on, lights.num_pixels, 0XFF, 0x32, 0x00);
+
         }
     }
 
@@ -494,21 +543,29 @@ static void render_indicator(int8_t direction) {
         if (num_of_leds_on >= REAR_TURN_SIGNAL_WIDTH) {
             led_strip_set_range(lights.left_strip, lights.pixels_left, 0, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
             led_strip_set_range(lights.left_strip, lights.pixels_left, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
+
+            led_strip_set_range(lights.right_strip, lights.pixels_right, 0, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
+            led_strip_set_range(lights.right_strip, lights.pixels_right, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
         } else {
             led_strip_set_range(lights.left_strip, lights.pixels_left, REAR_TURN_SIGNAL_WIDTH - num_of_leds_on, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
             led_strip_set_range(lights.left_strip, lights.pixels_left, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - REAR_TURN_SIGNAL_WIDTH + num_of_leds_on, lights.num_pixels, 0XFF, 0x32, 0x00);
+            led_strip_set_range(lights.right_strip, lights.pixels_right, REAR_TURN_SIGNAL_WIDTH - num_of_leds_on, REAR_TURN_SIGNAL_WIDTH - 1, lights.num_pixels, 0XFF, 0x32, 0x00);
+            led_strip_set_range(lights.right_strip, lights.pixels_right, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - REAR_TURN_SIGNAL_WIDTH + num_of_leds_on, lights.num_pixels, 0XFF, 0x32, 0x00);
         }
     }
 
     if (k_uptime_get() - render_timer > (int)((double)TURN_SIGNAL_ANIMATION_PERIOD_MS * 1.1)) {
         led_strip_set_range(lights.left_strip, lights.pixels_left, 0, REAR_TURN_SIGNAL_WIDTH-1, lights.num_pixels, max(running_lights_modifier*100, brake_lights_modifier*255), 0, 0);
         led_strip_set_range(lights.left_strip, lights.pixels_left, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - 1, lights.num_pixels, max(running_lights_modifier*100, brake_lights_modifier*255), 0, 0);
+        led_strip_set_range(lights.right_strip, lights.pixels_right, 0, REAR_TURN_SIGNAL_WIDTH-1, lights.num_pixels, max(running_lights_modifier*100, brake_lights_modifier*255), 0, 0);
+        led_strip_set_range(lights.right_strip, lights.pixels_right, lights.num_pixels-REAR_TURN_SIGNAL_WIDTH, lights.num_pixels - 1, lights.num_pixels, max(running_lights_modifier*100, brake_lights_modifier*255), 0, 0);
         render_timer = k_uptime_get();
     }
 }
 
 static void render_brake_lights(void) {
     led_strip_set_range(lights.left_strip, lights.pixels_left, REAR_TURN_SIGNAL_WIDTH + REAR_TURN_SIGNAL_STOP_LIGHT_MARGIN, lights.num_pixels - REAR_TURN_SIGNAL_WIDTH - REAR_TURN_SIGNAL_STOP_LIGHT_MARGIN - 1, lights.num_pixels, brake_lights_modifier*255, 0, 0);
+    led_strip_set_range(lights.right_strip, lights.pixels_right, REAR_TURN_SIGNAL_WIDTH + REAR_TURN_SIGNAL_STOP_LIGHT_MARGIN, lights.num_pixels - REAR_TURN_SIGNAL_WIDTH - REAR_TURN_SIGNAL_STOP_LIGHT_MARGIN - 1, lights.num_pixels, brake_lights_modifier*255, 0, 0);
 }
 
 #endif
@@ -710,6 +767,7 @@ void lcu_init(void)
     can_set_state_change_callback(can.device, can_state_change_cb, NULL);
 
     can_add_rx_filter_(can.device, lcu_swu_lcu_inputs_rx_cb, &swu_lcu_inputs_filter);
+    can_add_rx_filter_(can.device, lcu_mcu_analog_pedals_rx_cb, &mcu_analog_pedals_filter);
     can_add_rx_filter_(can.device, lcu_dfu_rx_cb, &dfu_filter);
 
     lcu_dfu_init();
@@ -751,12 +809,14 @@ void lcu_init(void)
 void lcu_on_tick(void)
 {
     while (1) {
+        brake_lights_modifier = (current_pedals.brake_pedal_voltage < 1.0f);
+
         if (lighting_update_flag) {
             lighting_update_flag = false;
             render_timer = k_uptime_get();
 
             running_lights_modifier = current_lighting.position_light;
-            brake_lights_modifier = current_lighting.brake_light;
+           // brake_lights_modifier = current_lighting.brake_light;
             indicator_direction_modifier = current_lighting.left_indicator ? 1 : (current_lighting.right_indicator ? -1 : 0);
             hazard_lights_modifier = current_lighting.hazard;
 
@@ -769,6 +829,7 @@ void lcu_on_tick(void)
         }else if (indicator_direction_modifier) {
             render_indicator(indicator_direction_modifier);
         }
+        brake_lights_modifier = (current_pedals.brake_pedal_voltage < 1.0f);
         render_brake_lights();
         led_strip_flush(lights.left_strip, lights.pixels_left, lights.num_pixels);
         led_strip_flush(lights.right_strip, lights.pixels_right, lights.num_pixels);
