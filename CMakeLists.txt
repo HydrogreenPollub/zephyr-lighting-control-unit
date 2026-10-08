@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13.1)
 
-set(LCU_TYPE "rear" CACHE STRING "Lighting control unit hardware position")
+set(LCU_TYPE "front" CACHE STRING "Lighting control unit hardware position")
 set_property(CACHE LCU_TYPE PROPERTY STRINGS front rear)
 
 if(LCU_TYPE STREQUAL "front")

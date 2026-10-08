@@ -61,5 +61,8 @@ int led_strip_clear_all_pixels(const struct device *strip, struct led_rgb *pixel
 
 int led_strip_flush(const struct device *strip, struct led_rgb *pixels,
                     size_t num_pixels) {
-    return led_strip_update_rgb(strip, pixels, num_pixels);
+    unsigned int key = irq_lock();
+    int ret = led_strip_update_rgb(strip, pixels, num_pixels);
+    irq_unlock(key);
+    return ret;
 }

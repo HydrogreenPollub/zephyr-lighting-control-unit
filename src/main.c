@@ -30,17 +30,6 @@ LOG_MODULE_REGISTER(main);
 struct led_rgb lgbt;
 int main(void) {
     lcu_init();
-    // lcu_lights_t lights = {
-    //     .strip = DEVICE_DT_GET(DT_ALIAS(led_strip)),
-    //     .num_pixels = STRIP_NUM_PIXELS,
-    //     .pixels = {},
-    //     .lights_mask = 0,
-    // };
-    //LOG_INF("SPI2 ready: %d", device_is_ready(DEVICE_DT_GET(DT_NODELABEL(spi2))));
-    //LOG_INF("SPI3 ready: %d", device_is_ready(DEVICE_DT_GET(DT_NODELABEL(spi3))));
-    while (1) {
-        // k_sleep(K_FOREVER);
-        lcu_on_tick();
-    }
+    lcu_on_tick();
     return 0;
 }
