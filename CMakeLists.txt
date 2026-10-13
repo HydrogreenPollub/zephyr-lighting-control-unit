@@ -25,10 +25,13 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(app LANGUAGES C)
 
 target_include_directories(app PRIVATE
-        peripherals
-        can-definitions
         src
+        ${CMAKE_SOURCE_DIR}/../modules/can-definitions
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals/include
 )
+
+#target_link_libraries(app PRIVATE can-definitions peripherals)
 
 if(CONFIG_BOOTLOADER_MCUBOOT)
     set(SIGNED_BIN  ${CMAKE_BINARY_DIR}/zephyr/zephyr.signed.bin)
@@ -36,13 +39,13 @@ if(CONFIG_BOOTLOADER_MCUBOOT)
     set(HEADER_BIN  ${CMAKE_BINARY_DIR}/zephyr/mcuboot_header.bin)
 
     add_custom_target(patch_elf_mcuboot_header ALL
-        COMMAND ${PYTHON_EXECUTABLE} -c
+            COMMAND ${PYTHON_EXECUTABLE} -c
             "h=open('${SIGNED_BIN}','rb').read(${CONFIG_ROM_START_OFFSET}); open('${HEADER_BIN}','wb').write(h)"
-        COMMAND ${PYTHON_EXECUTABLE}
+            COMMAND ${PYTHON_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/patch_elf_mcuboot_header.py
             ${ELF_FILE} ${HEADER_BIN} ${CONFIG_ROM_START_OFFSET}
-        COMMENT "Patching MCUboot image header into zephyr.elf for GDB"
-        VERBATIM
+            COMMENT "Patching MCUboot image header into zephyr.elf for GDB"
+            VERBATIM
     )
     add_dependencies(patch_elf_mcuboot_header zephyr_final)
 endif()
@@ -52,13 +55,13 @@ target_sources(app PRIVATE
         src/lighting_control_unit.c
         src/lcu_dfu.c
         src/led_strip_ctrl.c
-        peripherals/can.c
-        peripherals/can_dfu.c
-        peripherals/gpio.c
-        peripherals/pwm.c
-        peripherals/status_led.c
-        peripherals/test_button.c
-        can-definitions/candef.c
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals/can.c
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals/can_dfu.c
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals/gpio.c
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals/pwm.c
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals/status_led.c
+        ${CMAKE_SOURCE_DIR}/../modules/peripherals/test_button.c
+        ${CMAKE_SOURCE_DIR}/../modules/can-definitions/candef.c
 )
 
 target_compile_definitions(app PRIVATE ${LCU_TYPE_DEFINE})
